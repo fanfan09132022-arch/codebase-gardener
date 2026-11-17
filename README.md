@@ -13,8 +13,10 @@
 - **搭上线流水线**：检查不过就合不进主线；AI 按功能地图自动验证；每次小步上线，出事自动退回上一版
 - **每条结论都有依据**：体检结果要标明依据（项目自己的多数写法、官方文档、功能地图、实际运行结果），没依据的只能算推测
 - **按风险分级放权**：低风险改动关卡全过就自动上线；碰钱、碰权限、删数据、改关卡本身的改动永远停下等你
+- **埋雷测试**：故意往副本里放进已知的错误，看关卡拦下几个。核心功能的雷没全拦下，就不能免审上线
+- **事后追账**：上线后出的每个问题都记一笔，查清哪道关卡漏了、补上。出过漏网的区域暂停自动上线，直到补好
 - **长期园丁模式**：以后 AI 每犯一次重复的错，它都会主动问你要不要做成一条新的自动检查
-- **留几本你看得懂的账本**：功能地图、守门规则、上线就绪评分，都在项目的 `docs/` 里
+- **留几本你看得懂的账本**：功能地图、守门规则、上线就绪评分、埋雷记录、漏网记录，都在项目的 `docs/` 里
 
 ## 免审上线的五项前提
 
@@ -27,6 +29,13 @@
 | 5 标准答案 | 一份大白话的功能地图，写清每个功能怎样算正常 | 考试的标准答案 |
 
 前四项 AI 可以帮你搭。第五项只能由你确认，因为它决定了前四项检查的是什么。某个功能区域五项全部达标后，才允许那里的改动免审上线。
+
+## 怎么知道检查准不准
+
+AI 的判断本身没法保证对，所以这个 skill 不要求你相信它，而是用结果去量：
+
+- **误报**（说有问题，其实没有）：每条结论都要有依据，能实际跑出来，跑不出来的只算推测
+- **漏报**（真问题没发现）：用埋雷测试量"漏了多少"，用事后追账量"上线后漏网多少"。漏网次数应该逐月下降，连续两个月没降就暂停扩大放权
 
 ## 为不懂代码的人设计
 
@@ -109,9 +118,11 @@
 - GitHub 文档 [About protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)：检查不过不能合并（阶段 6a）
 - GitHub 文档 [About code owners](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)：指定文件的改动必须由指定的人批准（阶段 7 的红色区域）
 - Google SRE Workbook [Canarying Releases](https://sre.google/workbook/canarying-releases/)：先小范围上线、对比、异常就退回（阶段 6c）
+- Google 论文 [State of Mutation Testing at Google](https://research.google/pubs/state-of-mutation-testing-at-google/)，以及变异测试工具 [Stryker](https://stryker-mutator.io/)、[mutmut](https://github.com/boxed/mutmut)、[PIT](https://pitest.org/)：自动注入错误，量测试能抓住多少（埋雷测试）
+- Google SRE Book [Postmortem Culture](https://sre.google/sre-book/postmortem-culture/)：出事后记录原因和补救、不追究个人（事后追账）
 - Anthropic [Skill authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)：skill 的写法和长度
 
-面向非程序员的部分（大白话汇报、只读诊断、逐条批准、关卡演示、五项前提评分、按风险分级放权、守门账本）是本 skill 自己加的。
+面向非程序员的部分（大白话汇报、只读诊断、逐条批准、关卡演示、五项前提评分、按风险分级放权、功能雷和达标线、漏网暂停规则、各本账本）是本 skill 自己加的。
 
 本项目是对公开演讲内容的个人整理和改编，与 Lauren Tan 本人、SpaceXSI、GitHub、Google 都没有关联。
 
