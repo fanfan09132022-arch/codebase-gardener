@@ -157,17 +157,19 @@ def cmd_harvest(args):
     if not diff.strip():
         print("这个提交除了测试以外没有改动，做不成雷。", file=sys.stderr)
         return 2
-    rel = os.path.join(os.path.dirname(args.mines), "%s.patch" % args.id)
-    with open(os.path.join(root, rel), "w", encoding="utf-8") as f:
-        f.write(diff)
     mines_path = os.path.join(root, args.mines)
     mines = []
     if os.path.exists(mines_path):
         with open(mines_path, encoding="utf-8") as f:
             mines = json.load(f)
+    # 先查重再写补丁：否则重复的 id 会覆盖已有雷的补丁文件。
     if any(m["id"] == args.id for m in mines):
         print("雷 id 已存在：%s" % args.id, file=sys.stderr)
         return 2
+    rel = os.path.join(os.path.dirname(args.mines), "%s.patch" % args.id)
+    os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+    with open(os.path.join(root, rel), "w", encoding="utf-8") as f:
+        f.write(diff)
     mines.append({"id": args.id, "area": args.area, "core": not args.not_core, "source": "history",
                   "patch": rel, "description": args.description, "from_commit": args.commit})
     with open(mines_path, "w", encoding="utf-8") as f:
