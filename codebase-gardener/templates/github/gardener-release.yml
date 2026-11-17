@@ -1,0 +1,112 @@
+# 代码库园丁 · 上线流水线。放到项目的 .github/workflows/gardener-release.yml。
+#
+# 主线每合进一次改动，就跑一次：
+#   1. decide：判断风险等级，再问 release_gate.py 这个区域能不能自动上线。
+#   2. deploy：能自动上线就直接走；不能就停在「等使用者批准」，使用者在 Actions 页面点批准才继续。
+#      上线后跑健康检查，不通过就自动退回上一版，并在上线账本里记一笔，这个区域随即暂停自动上线。
+#
+# 需要使用者在 Settings > Environments 里建两个环境：
+#   production-auto：不设审批人。
+#   production：Required reviewers 只填使用者本人。不要勾 Prevent self-review，
+#               否则使用者自己合并的改动就没人能批了。AI 的账号不能出现在审批人里。
+# 免费账号只有公开仓库能用环境审批；私有仓库要 GitHub Pro 或 Team。
+#
+# 项目要自己提供两个脚本，这是每个项目都不一样的部分：
+#   ./deploy.sh <版本>   把这个版本发到正式环境（能先发金丝雀就先发金丝雀）
+#   ./rollback.sh        退回上一个正常版本
+# 还要提供 .gardener/health.json（健康检查清单）和仓库变量 GARDENER_PROD_URL。
+
+name: gardener-release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: gardener-ledger
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      auto: ${{ steps.gate.outputs.auto }}
+      tier: ${{ steps.gate.outputs.tier }}
+      areas: ${{ steps.gate.outputs.areas }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: 取出上线账本
+        run: bash .gardener/bin/ledger.sh open
+      - name: 判断能不能自动上线
+        id: gate
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          python3 -I .gardener/bin/risk_scan.py --base "$BEFORE" | tee "$RUNNER_TEMP/risk.txt"
+          grep '^JSON:' "$RUNNER_TEMP/risk.txt" | sed 's/^JSON://' > "$RUNNER_TEMP/risk.json"
+          tier=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['overall'])" "$RUNNER_TEMP/risk.json")
+          areas=$(python3 -c "import json,sys;print(','.join(json.load(open(sys.argv[1]))['areas']))" "$RUNNER_TEMP/risk.json")
+          unreg=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['has_unregistered_files'])" "$RUNNER_TEMP/risk.json")
+          auto=true
+          if [ "$tier" = "red" ] || [ "$unreg" = "True" ]; then auto=false; fi
+          if [ -z "$areas" ] && [ "$tier" != "green" ]; then auto=false; fi
+          IFS=',' read -ra list <<< "$areas"
+          for a in "${list[@]}"; do
+            [ -z "$a" ] && continue
+            python3 -I .gardener/bin/release_gate.py --ledger ledger/deploys.jsonl --mine-results ledger/mine-results \
+              check --area "$a" --tier "$tier" || auto=false
+          done
+          echo "auto=$auto" >> "$GITHUB_OUTPUT"
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          echo "areas=$areas" >> "$GITHUB_OUTPUT"
+          echo "自动上线：$auto"
+
+  deploy:
+    needs: decide
+    runs-on: ubuntu-latest
+    environment: ${{ needs.decide.outputs.auto == 'true' && 'production-auto' || 'production' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: 取出上线账本
+        run: bash .gardener/bin/ledger.sh open
+      - name: 上线、检查、出事就退回、记账
+        env:
+          PROD_URL: ${{ vars.GARDENER_PROD_URL }}
+          AUTO: ${{ needs.decide.outputs.auto }}
+          TIER: ${{ needs.decide.outputs.tier }}
+          AREAS: ${{ needs.decide.outputs.areas }}
+        run: |
+          start=$(date +%s)
+          version="${GITHUB_SHA::12}"
+          result=ok
+          ./deploy.sh "$version" || result=rolled_back
+          if [ "$result" = ok ] && ! python3 -I .gardener/bin/health_check.py --checks .gardener/health.json --base-url "$PROD_URL"; then
+            result=rolled_back
+          fi
+          bad=0
+          if [ "$result" = rolled_back ]; then
+            ./rollback.sh
+            python3 -I .gardener/bin/health_check.py --checks .gardener/health.json --base-url "$PROD_URL" || echo "⚠️ 退回后健康检查仍不通过，需要人工处理"
+            bad=$(( ( $(date +%s) - start + 59 ) / 60 ))
+          fi
+          auto_flag=""
+          [ "$AUTO" = "true" ] && auto_flag="--auto"
+          IFS=',' read -ra list <<< "${AREAS:-未登记}"
+          for a in "${list[@]}"; do
+            [ -z "$a" ] && continue
+            python3 -I .gardener/bin/release_gate.py --ledger ledger/deploys.jsonl \
+              record --area "$a" --version "$version" --result "$result" --tier "$TIER" $auto_flag \
+              --bad-minutes "$bad" --detected-by "上线后健康检查"
+          done
+          bash .gardener/bin/ledger.sh save "上线 $version：$result"
+          if [ "$result" != ok ]; then
+            echo "🔴 上线后检查不通过，已自动退回。请在 docs/漏网记录.md 记一笔。"
+            exit 1
+          fi

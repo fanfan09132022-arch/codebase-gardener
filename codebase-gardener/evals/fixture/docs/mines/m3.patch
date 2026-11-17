@@ -1,0 +1,6 @@
+--- a/src/reports/summary.py
++++ b/src/reports/summary.py
+@@ -1,2 +1,2 @@
+-def mean(xs):
++def mean(ys):
+     pass

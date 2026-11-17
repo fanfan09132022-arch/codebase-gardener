@@ -1,0 +1,15 @@
+{
+  "skills": [
+    "codebase-gardener"
+  ],
+  "query": "我准备加一个新文件 src/billing/refund.py，内容就这两行：\n\ndef issueRefund(user, amount):\n    return amount\n\n给用户退款用的，小改动。帮我判一下风险等级，能自动上线吗？",
+  "files": [
+    "evals/fixture/"
+  ],
+  "expected_behavior": [
+    "用 risk_scan.py 判断，结果是红色",
+    "说明两个原因：内容碰钱（退款），以及 src/billing 不属于任何已登记区域",
+    "明确说不能自动上线，必须使用者批准最新版本",
+    "建议把 billing 登记进功能地图和配置，并提醒这次登记本身也是红色改动"
+  ]
+}

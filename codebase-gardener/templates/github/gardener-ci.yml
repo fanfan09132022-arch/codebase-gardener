@@ -1,0 +1,95 @@
+# 代码库园丁 · 合并前关卡。放到项目的 .github/workflows/gardener-ci.yml。
+# 在主线保护里把下面三个任务都设成「必须通过」：checks、security、risk。
+#
+# 需要先在仓库 Settings > Secrets and variables > Actions > Variables 里建一个变量：
+#   GARDENER_OWNER = 使用者自己的 GitHub 用户名
+# 个人仓库里只有仓库主人能改这个变量，AI 用的协作者账号改不了。
+#
+# Action 按提交哈希锁定版本，防止上游标签被人改掉后偷偷换代码。升级时一并换哈希。
+
+name: gardener-ci
+
+on:
+  pull_request:
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      # 按项目装依赖，例如：pip install -r requirements.txt 或 npm ci
+      - name: 全部检查、测试和自动验证
+        env:
+          BASE_REF: ${{ github.base_ref || github.event.pull_request.base.ref }}
+        run: |
+          # 关卡命令从主线读，不从这次改动读。改动想改关卡命令，必须先经使用者批准合进主线。
+          git show "origin/${BASE_REF}:.gardener/config.json" > "$RUNNER_TEMP/base-config.json"
+          GATE=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['gate_command'])" "$RUNNER_TEMP/base-config.json")
+          echo "关卡命令：$GATE"
+          bash -c "$GATE"
+
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: 查有没有把密钥写进代码
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 查依赖里已知的安全漏洞。按项目语言留一行，删掉其他行：
+      - name: 查依赖漏洞
+        run: |
+          if [ -f requirements.txt ]; then pip install pip-audit && pip-audit -r requirements.txt; fi
+          if [ -f package-lock.json ]; then npm audit --audit-level=high; fi
+      # 公开仓库还可以开 GitHub 自带的 CodeQL 代码扫描和 Dependabot，在 Settings > Code security 里点开即可。
+
+  risk:
+    name: risk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: 判断风险等级（用主线上的脚本和配置）
+        id: risk
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git show "origin/${BASE_REF}:.gardener/bin/risk_scan.py" > "$RUNNER_TEMP/risk_scan.py"
+          git show "origin/${BASE_REF}:.gardener/config.json" > "$RUNNER_TEMP/base-config.json"
+          python3 -I "$RUNNER_TEMP/risk_scan.py" --config "$RUNNER_TEMP/base-config.json" --base "origin/${BASE_REF}" | tee "$RUNNER_TEMP/risk.txt"
+          overall=$(grep '^JSON:' "$RUNNER_TEMP/risk.txt" | sed 's/^JSON://' | python3 -c "import json,sys;print(json.load(sys.stdin)['overall'])")
+          echo "overall=$overall" >> "$GITHUB_OUTPUT"
+      - name: 红色改动必须由使用者批准最新版本
+        if: steps.risk.outputs.overall != 'green' && steps.risk.outputs.overall != 'yellow'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ vars.GARDENER_OWNER }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -z "$OWNER" ]; then echo "没有设置 GARDENER_OWNER 变量，按不通过处理"; exit 1; fi
+          # 只认对「当前最新提交」的批准。批准之后又改了代码，就要重新批准。
+          n=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+                --jq ".[] | select(.user.login == \"$OWNER\" and .state == \"APPROVED\" and .commit_id == \"$HEAD_SHA\") | .id" | wc -l)
+          if [ "$n" -lt 1 ]; then
+            echo "🔴 这次改动是红色，需要 $OWNER 在 PR 页面点「Approve」批准最新版本。"
+            exit 1
+          fi
+          echo "使用者已批准最新版本。"

@@ -1,0 +1,21 @@
+# 代码库园丁 · 指定审批人。放到项目的 .github/CODEOWNERS。
+# 把 @OWNER 换成使用者的 GitHub 用户名。主线保护里要勾选「Require review from Code Owners」。
+# 这里只列路径。按内容判断风险由 gardener-ci.yml 里的 risk 任务负责，两道一起用。
+# 注意：GitHub 不允许 PR 作者批准自己的 PR。所以 AI 必须用自己的账号提 PR，使用者才能批准。
+
+# 关卡本身
+/.github/            @OWNER
+/.gardener/          @OWNER
+/docs/功能地图.md      @OWNER
+/docs/上线就绪.md      @OWNER
+/docs/守门规则.md      @OWNER
+/docs/埋雷记录.md      @OWNER
+/docs/漏网记录.md      @OWNER
+/docs/mines/         @OWNER
+/deploy.sh           @OWNER
+/rollback.sh         @OWNER
+
+# 红色区域：按阶段 1 标出的碰钱、权限、数据、对外发送的目录补充，例如
+# /src/payments/     @OWNER
+# /src/auth/         @OWNER
+# /migrations/       @OWNER

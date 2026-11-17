@@ -1,0 +1,81 @@
+{
+  "_说明": "代码库园丁的机器配置。放在项目的 .gardener/config.json。这个文件本身属于关卡，改动永远是红色，必须使用者批准。",
+
+  "gate_command": "make check",
+  "_gate_command说明": "一条命令跑完全部检查、测试和自动验证。退出码 0 表示通过。埋雷测试也用它判断雷有没有被拦下。",
+
+  "protected_paths": [
+    ".github/*",
+    ".gardener/*",
+    "CODEOWNERS",
+    "docs/功能地图.md",
+    "docs/上线就绪.md",
+    "docs/守门规则.md",
+    "docs/埋雷记录.md",
+    "docs/漏网记录.md",
+    "docs/mines/*",
+    "deploy.sh",
+    "rollback.sh",
+    "*migrations/*",
+    "*migrate*"
+  ],
+  "_protected_paths说明": "改这些文件等于改关卡本身或动数据结构，一律红色。路径用 fnmatch 匹配，* 可以跨目录。",
+
+  "green_paths": [
+    "*.md",
+    "*.css",
+    "*.scss",
+    "locales/*",
+    "i18n/*"
+  ],
+  "_green_paths说明": "只改这些文件、且内容里没有命中红色关键词的改动算绿色。受保护路径优先于这里。",
+
+  "test_paths": [
+    "tests/*",
+    "test/*",
+    "*_test.*",
+    "*.test.*",
+    "*.spec.*",
+    "test_*"
+  ],
+  "_test_paths说明": "只新增测试算绿色。删除或修改已有测试行，等于放松关卡，算红色。",
+
+  "red_keywords_extra": [],
+  "_red_keywords_extra说明": "项目自己的红色关键词，例如自己的支付函数名。会和脚本内置的通用关键词一起用。",
+
+  "areas": {
+    "示例-后台报表": {
+      "paths": ["src/reports/*"],
+      "tier": "yellow",
+      "allow_yellow_auto": false,
+      "readiness": {
+        "结构": {"status": "no", "evidence": ""},
+        "强制关卡": {"status": "no", "evidence": ""},
+        "自动验证": {"status": "no", "evidence": ""},
+        "能退回": {"status": "no", "evidence": ""},
+        "标准答案": {"status": "no", "evidence": ""}
+      },
+      "slo": {"target": 0.995}
+    }
+  },
+  "_areas说明": "按功能地图划区。tier 是使用者确认过的区域风险等级：green、yellow、red。readiness 每项 status 只能是 ok 或 no，ok 必须附 evidence，即项目里能打开的证据文件路径。allow_yellow_auto 要使用者明确同意才能改成 true。slo.target 是这个区域「正常工作的时间占比」目标。",
+
+  "thresholds": {
+    "window_days": 30,
+    "max_change_fail_rate": 0.15,
+    "confidence_z": 1.96,
+    "max_median_recovery_minutes": 60,
+    "max_mine_age_days": 35,
+    "min_mine_sources": 2,
+    "max_evidence_age_days": 90
+  },
+  "_thresholds说明": {
+    "window_days": "统计窗口。和月度复盘对齐。",
+    "max_change_fail_rate": "可接受的变更失败率上限。起步默认值，本 skill 自定，没有行业统一标准。数越小越保守。",
+    "confidence_z": "按 95% 置信度算失败率的上界。用上界而不是平均值，是为了样本少时不被运气骗。0 次失败时，大约要连续 22 次成功上线，上界才会低于 15%，与统计学的「三法则」一致。",
+    "max_median_recovery_minutes": "出事后从上线到恢复的中位时间上限。起步默认值，本 skill 自定，按项目能承受的停机时间调。",
+    "max_mine_age_days": "最近一次埋雷测试距今不能超过多少天。对应「每月重跑」。",
+    "min_mine_sources": "一个区域的核心功能雷至少来自几种不同来源，用来减少同一个 AI 设计雷和写检查的同源盲区。",
+    "max_evidence_age_days": "就绪评分里的证据文件超过多少天没更新，就当作过期。"
+  }
+}

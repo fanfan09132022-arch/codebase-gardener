@@ -1,0 +1,8 @@
+--- a/src/shop/pricing.py
++++ b/src/shop/pricing.py
+@@ -1,4 +1,4 @@
+ def total(price, qty, shipping):
+     if qty <= 0:
+         raise ValueError("qty must be positive")
+-    return price * qty + shipping
++    return price * qty - shipping

@@ -1,0 +1,35 @@
+[
+  {
+    "id": "m1",
+    "area": "下单",
+    "core": true,
+    "source": "ai",
+    "patch": "docs/mines/m1.patch",
+    "description": "运费从加变成减"
+  },
+  {
+    "id": "m2",
+    "area": "报表",
+    "core": true,
+    "source": "user",
+    "patch": "docs/mines/m2.patch",
+    "description": "只有一个数时平均值变成 0"
+  },
+  {
+    "id": "m3",
+    "area": "报表",
+    "core": false,
+    "source": "ai",
+    "patch": "docs/mines/m3.patch",
+    "description": "旧代码上的雷"
+  },
+  {
+    "id": "m4",
+    "area": "报表",
+    "core": true,
+    "source": "history",
+    "patch": "docs/mines/m4.patch",
+    "description": "平均值又不忽略空值了",
+    "from_commit": "5418fcd5bb92c9d6a7d7d2867e112b5fb9920960"
+  }
+]

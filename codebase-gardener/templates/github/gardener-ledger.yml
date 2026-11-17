@@ -1,0 +1,83 @@
+# 代码库园丁 · 账本维护。放到项目的 .github/workflows/gardener-ledger.yml。
+#
+# 三件事：
+#   每月 1 号自动重跑埋雷测试，结果存进上线账本分支。
+#   手动登记「上线后才发现的问题」：任何人都能登记。登记只会收紧，不会放松。
+#   手动恢复暂停的区域：只有使用者本人点才生效，AI 的账号点了会直接失败。
+
+name: gardener-ledger
+
+on:
+  schedule:
+    - cron: "0 2 1 * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "做什么"
+        type: choice
+        options: [run-mines, record-incident, resume]
+      area:
+        description: "区域名（和 .gardener/config.json 里一致）"
+        required: false
+      version:
+        description: "出问题的版本（登记问题时填）"
+        required: false
+      bad_minutes:
+        description: "从上线到恢复一共坏了多少分钟（登记问题时填）"
+        required: false
+      note:
+        description: "大白话说明"
+        required: false
+
+concurrency:
+  group: gardener-ledger
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: 取出上线账本
+        run: bash .gardener/bin/ledger.sh open
+      - name: 执行
+        env:
+          ACTION: ${{ inputs.action || 'run-mines' }}
+          AREA: ${{ inputs.area }}
+          VERSION: ${{ inputs.version }}
+          BAD: ${{ inputs.bad_minutes }}
+          NOTE: ${{ inputs.note }}
+          OWNER: ${{ vars.GARDENER_OWNER }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          G="python3 -I .gardener/bin/release_gate.py --ledger ledger/deploys.jsonl"
+          case "$ACTION" in
+            run-mines)
+              # 按项目装依赖，和 gardener-ci.yml 的 checks 保持一致
+              status=0
+              python3 -I .gardener/bin/run_mines.py run || status=$?
+              mkdir -p ledger/mine-results && cp .gardener/mine-results/*.json ledger/mine-results/
+              bash .gardener/bin/ledger.sh save "埋雷测试 $(date +%F)"
+              exit $status
+              ;;
+            record-incident)
+              $G record --area "$AREA" --version "$VERSION" --result incident --bad-minutes "$BAD" --detected-by "$NOTE"
+              bash .gardener/bin/ledger.sh save "登记上线后问题：$AREA $VERSION"
+              ;;
+            resume)
+              if [ -z "$OWNER" ] || [ "$ACTOR" != "$OWNER" ]; then
+                echo "只有使用者本人（$OWNER）能恢复区域，这次是 $ACTOR 点的。"
+                exit 1
+              fi
+              $G resume --area "$AREA" --note "$NOTE" --approved-by "$ACTOR"
+              bash .gardener/bin/ledger.sh save "恢复区域：$AREA"
+              ;;
+          esac
