@@ -78,7 +78,7 @@ codebase-gardener/
 │   └── measurement.md          怎么量：埋雷、事后追账、放权指标、阈值来源、每月复盘
 ├── scripts/                    装进项目的 .gardener/bin/，只用 Python 3.8+ 标准库
 │   ├── risk_scan.py            判断改动风险等级（路径 + 内容）
-│   ├── release_gate.py         判断区域能不能自动上线；记上线账本；出月报
+│   ├── release_gate.py         判断区域能不能自动上线；记上线账本；出月报；导入已有发版记录
 │   ├── run_mines.py            埋雷测试；从修 bug 的提交反推新雷
 │   ├── health_check.py         上线后健康检查
 │   └── ledger.sh               上线账本分支的取出、保存、核查

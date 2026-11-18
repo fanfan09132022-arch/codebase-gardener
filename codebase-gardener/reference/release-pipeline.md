@@ -2,6 +2,7 @@
 
 ## 目录
 - 先决条件：AI 必须用独立账号
+- 本机发版的项目
 - 装哪些文件
 - 主线保护和部署环境：使用者要点的设置
 - 6a 强制关卡
@@ -23,6 +24,17 @@
 - 达标证据：在 `docs/守门规则.md` 记下 AI 账号名、它的权限级别，以及一次演示：用 AI 账号去改主线保护，被拒绝。
 
 做不到这一条的项目，前提 2「强制关卡」最多 🟡，不能进入阶段 7。
+
+## 本机发版的项目
+
+有些项目不走「GitHub 合并后自动上线」，而是在本机用一个发版脚本，把某个提交复制到发布目录再切换过去，常见的还会从多个分支发版。这时 GitHub 工作流模板用不上，按下面做：
+
+- **关卡接进现有发版脚本**，不另起一套。脚本在切换前依次跑：`risk_scan.py --base <线上版本的提交>` 判风险；这次改动涉及区域的 `gate_command`；`release_gate.py check`。任何一步不通过就不切换。切换后跑健康检查，再 `release_gate.py record`。改发版脚本本身是红色改动。
+- **账本从已有记录导入。** 发版脚本已经按行记录每次上线和退回的，用 `release_gate.py import-history` 一次导入，之后由发版脚本调用 `record` 追加。导入的退回会让区域处于暂停，使用者确认那些问题已处理后再 `resume`。
+- **返工另算上限。** 导入只看得到「退回」，看不到「发出去以后又发一版来修」。按提交信息里 fix、hotfix 的比例估一个上限，汇报时和退回率一起给，不只报低的那个。
+- **按区域定关卡。** 完整测试套件跑太久（超过几分钟）的，在区域配置里写自己的 `gate_command`，只跑这个区域相关的测试。区域关卡必须先用这个区域的历史雷验证过：拦下率达到要求才算数。
+- **局限要照实写。** 本机关卡和 AI 用的是同一台机器、同一套权限，AI 改发版脚本或直接切换发布目录就能绕过。所以前提 2 最多 🟡，阶段 7 只能放权到「使用者看证据摘要后一键批准」，不能完全免审，除非换到 AI 没有权限的机器或服务上发版。
+- 私有仓库加 GitHub 免费账号时，主线保护和部署环境审批都开不了（API 返回 403），也会落到这一节。
 
 ## 装哪些文件
 
@@ -58,7 +70,7 @@ AI 没有权限改这些设置，要一步一步教使用者点。点完后由 A
 部署环境，在 Settings > Environments 里：
 - `production-auto`：不设审批人。
 - `production`：审批人只填使用者本人。不要勾「Prevent self-review」，否则使用者自己合并的改动就没人能批。
-- 免费账号只有公开仓库能用部署环境的审批；私有仓库要 GitHub Pro 或 Team。见 [GitHub 文档](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment)。
+- 免费账号只有公开仓库能用部署环境的审批和主线保护；私有仓库要 GitHub Pro 或 Team。见 [GitHub 文档](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment)。
 
 仓库变量，在 Settings > Secrets and variables > Actions > Variables 里：
 - `GARDENER_OWNER`：使用者的 GitHub 用户名。

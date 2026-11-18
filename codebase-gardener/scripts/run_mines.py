@@ -17,7 +17,9 @@ source 只能是下面几种，用来分散「同一个 AI 设计雷又写检查
 
 run 的步骤：
   1. 在临时目录里检出当前版本，先跑一遍关卡。不通过就停：验证方法本身有问题，结果不可信。
+     区域在配置里写了自己的 gate_command 时，这个区域的雷用它，否则用全局的。每条用到的关卡都先在干净版本上跑一遍。
   2. 每个雷：放进一个全新的临时副本，跑关卡。关卡失败 = 拦下。
+     一个区域有 2 个以上的雷却一个都没拦下，会提示先查关卡是不是测错了地方，或测的不是这份副本里的代码。
   3. 补丁放不进去的雷记为「失效」，不算拦下，必须修好或由使用者批准退役。
   4. 结果写入 .gardener/mine-results/<日期>.json，供 release_gate.py 读取。
 
@@ -101,20 +103,30 @@ def cmd_run(args):
     root = repo_root()
     with open(os.path.join(root, args.config), encoding="utf-8") as f:
         cfg = json.load(f)
-    gate = args.gate or cfg.get("gate_command")
-    if not gate:
-        print("配置里没有 gate_command，无法判断雷有没有被拦下。", file=sys.stderr)
-        return 2
     mines = load_mines(root, args.mines)
+    areas = cfg.get("areas", {})
+
+    def gate_for(area):
+        # --gate 是临时覆盖，优先于一切；其次区域自己的关卡；最后全局关卡。
+        return args.gate or areas.get(area, {}).get("gate_command") or cfg.get("gate_command")
+
+    missing = sorted({m["area"] for m in mines if not gate_for(m["area"])})
+    if missing:
+        print("这些区域没有可用的 gate_command，无法判断雷有没有被拦下：%s" % "、".join(missing), file=sys.stderr)
+        return 2
     head = sh(["git", "rev-parse", "HEAD"], cwd=root).stdout.strip()
 
     print("第 1 步：先确认干净版本能通过关卡……")
-    with Worktree(root) as wt:
-        code, tail = run_gate(gate, wt, args.timeout)
-    if code != 0:
-        print("干净版本没有通过关卡（退出码 %d）。先修好关卡或测试，再埋雷。\n%s" % (code, tail))
-        return 2
-    print("  通过。")
+    gate_seconds = {}
+    for gate in sorted({gate_for(m["area"]) for m in mines}):
+        started = dt.datetime.now()
+        with Worktree(root) as wt:
+            code, tail = run_gate(gate, wt, args.timeout)
+        if code != 0:
+            print("干净版本没有通过关卡（退出码 %d）。先修好关卡或测试，再埋雷。\n关卡：%s\n%s" % (code, gate, tail))
+            return 2
+        gate_seconds[gate] = round((dt.datetime.now() - started).total_seconds(), 1)
+        print("  通过，用时 %.0f 秒：%s" % (gate_seconds[gate], gate[:100]))
 
     results = []
     for m in mines:
@@ -124,7 +136,7 @@ def cmd_run(args):
             if ap.returncode != 0:
                 status, detail = "stale", "补丁放不进去，代码已经变了：" + ap.stderr.strip()[:200]
             else:
-                code, tail = run_gate(gate, wt, args.timeout)
+                code, tail = run_gate(gate_for(m["area"]), wt, args.timeout)
                 status = "blocked" if code != 0 else "missed"
                 detail = tail
         results.append(dict(m, status=status, detail=detail))
@@ -136,7 +148,7 @@ def cmd_run(args):
     os.makedirs(out_dir, exist_ok=True)
     out = os.path.join(out_dir, "%s.json" % today)
     with open(out, "w", encoding="utf-8") as f:
-        json.dump({"date": today, "commit": head, "gate_command": gate, "results": results},
+        json.dump({"date": today, "commit": head, "gate_seconds": gate_seconds, "results": results},
                   f, ensure_ascii=False, indent=2)
 
     core = [r for r in results if r["core"]]
@@ -145,6 +157,13 @@ def cmd_run(args):
         len(results), sum(r["status"] == "blocked" for r in results),
         sum(r["status"] == "missed" for r in results), sum(r["status"] == "stale" for r in results)))
     print("核心功能的雷：%d 个，没拦下或失效 %d 个。" % (len(core), len(bad)))
+    for area in sorted({r["area"] for r in results}):
+        rs = [r for r in results if r["area"] == area and r["status"] != "stale"]
+        if len(rs) >= 2 and not any(r["status"] == "blocked" for r in rs):
+            print("⚠️ 区域「%s」%d 个雷一个都没拦下。先查两件事，再下「测试不够」的结论：\n"
+                  "   1. 关卡跑的测试是不是覆盖这个区域的代码；\n"
+                  "   2. 测试导入的是不是这份副本里的代码，而不是开发目录或已安装的旧版本"
+                  "（Python 查 .pth 和 editable 安装，Node 查 npm link）。" % (area, len(rs)))
     print("结果已写入 %s" % os.path.relpath(out, root))
     return 1 if bad else 0
 

@@ -16,6 +16,13 @@
   python3 release_gate.py record --area 下单 --version v43 --result rolled_back --bad-minutes 12 --detected-by 健康检查
   python3 release_gate.py resume --area 下单 --note "补了运费验证，埋雷 2026-11-20 全拦下" --approved-by 使用者
   python3 release_gate.py report
+  python3 release_gate.py import-history --from prod/history.jsonl --area 研判 \
+      --time-key ts --version-key to --kind-key reason --release-value release --rollback-value rollback --rolled-back-key from
+
+import-history 把项目已有的发版记录换算成上线账本，适合本机发版、早就留着记录的项目，
+不用从 0 次开始攒。只能导入空账本。记录里每次「退回」都把被退掉的那一版记为 rolled_back，
+坏掉的分钟数 = 退回时间 − 那一版的上线时间。
+它看不出「发出去以后又发了一版来修」的情况，这类返工要另外按提交信息估一个上限，汇报时两个数一起给。
 
 check 的退出码：0 = 可以自动上线；1 = 不行，要使用者批准；2 = 脚本出错（按不行处理）。
 只用 Python 标准库，Python 3.8 及以上。
@@ -231,6 +238,49 @@ def cmd_resume(args, cfg):
     return 0
 
 
+def short_version(v):
+    return os.path.basename(str(v).rstrip("/"))
+
+
+def cmd_import_history(args, cfg):
+    if load_ledger(args.ledger):
+        print("上线账本已经有记录，import-history 只能导入空账本，避免重复记账。", file=sys.stderr)
+        return 2
+    src = []
+    with open(args.source, encoding="utf-8") as f:
+        for i, line in enumerate(f, 1):
+            if line.strip():
+                try:
+                    src.append(json.loads(line))
+                except json.JSONDecodeError:
+                    raise ValueError("发版记录第 %d 行不是合法 JSON" % i)
+    deploys = []
+    unmatched = 0
+    for r in src:
+        kind = r.get(args.kind_key)
+        if kind == args.release_value:
+            deploys.append({"type": "deploy", "time": parse_time(r[args.time_key]).isoformat(timespec="seconds"),
+                            "area": args.area, "version": short_version(r[args.version_key]), "result": "ok",
+                            "tier": "", "auto": False, "bad_minutes": 0, "detected_by": "",
+                            "imported_from": args.source})
+        elif kind == args.rollback_value:
+            bad = short_version(r.get(args.rolled_back_key, ""))
+            hit = next((d for d in reversed(deploys) if d["version"] == bad and d["result"] == "ok"), None)
+            if hit is None:
+                unmatched += 1
+                continue
+            hit["result"] = "rolled_back"
+            hit["detected_by"] = "退回记录"
+            hit["bad_minutes"] = round((parse_time(r[args.time_key]) - parse_time(hit["time"])).total_seconds() / 60, 1)
+    for d in deploys:
+        append(args.ledger, d)
+    fails = sum(d["result"] == "rolled_back" for d in deploys)
+    print("已导入 %d 次上线，其中 %d 次被退回。" % (len(deploys), fails))
+    if unmatched:
+        print("有 %d 条退回记录找不到对应的上线，没有计入。请人工核对。" % unmatched)
+    return 0
+
+
 def cmd_report(args, cfg):
     rows = load_ledger(args.ledger)
     th = cfg["thresholds"]
@@ -274,11 +324,21 @@ def main():
     s.add_argument("--note", required=True)
     s.add_argument("--approved-by", required=True)
     sub.add_parser("report")
+    h = sub.add_parser("import-history")
+    h.add_argument("--from", dest="source", required=True, help="已有的发版记录，JSON Lines")
+    h.add_argument("--area", required=True)
+    h.add_argument("--time-key", default="time")
+    h.add_argument("--version-key", default="version")
+    h.add_argument("--kind-key", default="reason")
+    h.add_argument("--release-value", default="release")
+    h.add_argument("--rollback-value", default="rollback")
+    h.add_argument("--rolled-back-key", default="from", help="退回记录里「被退掉的版本」字段")
     args = ap.parse_args()
     try:
         with open(args.config, encoding="utf-8") as f:
             cfg = json.load(f)
-        return {"check": cmd_check, "record": cmd_record, "resume": cmd_resume, "report": cmd_report}[args.cmd](args, cfg)
+        return {"check": cmd_check, "record": cmd_record, "resume": cmd_resume, "report": cmd_report,
+                "import-history": cmd_import_history}[args.cmd](args, cfg)
     except Exception as e:
         print("放权闸门出错，按「不放行」处理：%s" % e, file=sys.stderr)
         return 2

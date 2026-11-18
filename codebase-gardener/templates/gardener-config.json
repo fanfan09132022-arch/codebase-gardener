@@ -55,10 +55,11 @@
         "能退回": {"status": "no", "evidence": ""},
         "标准答案": {"status": "no", "evidence": ""}
       },
-      "slo": {"target": 0.995}
+      "slo": {"target": 0.995},
+      "gate_command": ""
     }
   },
-  "_areas说明": "按功能地图划区。tier 是使用者确认过的区域风险等级：green、yellow、red。readiness 每项 status 只能是 ok 或 no，ok 必须附 evidence，即项目里能打开的证据文件路径。allow_yellow_auto 要使用者明确同意才能改成 true。slo.target 是这个区域「正常工作的时间占比」目标。",
+  "_areas说明": "按功能地图划区。tier 是使用者确认过的区域风险等级：green、yellow、red。readiness 每项 status 只能是 ok 或 no，ok 必须附 evidence，即项目里能打开的证据文件路径。allow_yellow_auto 要使用者明确同意才能改成 true。slo.target 是这个区域「正常工作的时间占比」目标。gate_command 可选：留空用全局的；完整测试太慢时，写只跑这个区域相关测试的命令，埋雷和本机发版都用它。",
 
   "thresholds": {
     "window_days": 30,
